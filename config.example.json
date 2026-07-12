@@ -1,0 +1,20 @@
+{
+  "height_map": "samples/height.png",
+  "color_map": "samples/color.png",
+  "output": "outputs/terrain.png",
+  "engine": "BLENDER_EEVEE_NEXT",
+  "subdivisions": 256,
+  "terrain_size": 10.0,
+  "height_strength": 1.8,
+  "sun_azimuth": 315.0,
+  "sun_elevation": 35.0,
+  "sun_energy": 3.0,
+  "camera": "ORTHO",
+  "camera_azimuth": 225.0,
+  "camera_elevation": 42.0,
+  "resolution": [1600, 1600],
+  "samples": 64,
+  "transparent_background": false,
+  "save_blend": true
+}
+

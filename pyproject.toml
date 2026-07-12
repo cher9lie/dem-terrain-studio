@@ -1,0 +1,30 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "dem-terrain-studio"
+version = "0.1.0"
+description = "Turn DEM-derived height maps and color maps into studio-lit 3D terrain renders with Blender."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "GPL-3.0-only" }
+authors = [{ name = "ChenNan" }]
+keywords = ["dem", "terrain", "blender", "gis", "rendering"]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+  "Programming Language :: Python :: 3",
+]
+dependencies = []
+
+[project.scripts]
+dem-terrain-studio = "dem_terrain_studio.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/cher9lie/dem-terrain-studio"
+Issues = "https://github.com/cher9lie/dem-terrain-studio/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dem_terrain_studio"]
+
