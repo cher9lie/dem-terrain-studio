@@ -2,7 +2,7 @@
   "height_map": "samples/height.png",
   "color_map": "samples/color.png",
   "output": "outputs/terrain.png",
-  "engine": "BLENDER_EEVEE_NEXT",
+  "engine": "BLENDER_EEVEE",
   "subdivisions": 256,
   "terrain_size": 10.0,
   "height_strength": 1.8,
@@ -17,4 +17,3 @@
   "transparent_background": false,
   "save_blend": true
 }
-

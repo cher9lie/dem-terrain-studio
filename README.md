@@ -1,13 +1,13 @@
 # DEM Terrain Studio
 
-把传统的“GIS 导出高度图与色带图，再到 Blender 手工建模和打光”流程，变成可重复的一键渲染工作流。
+把传统的“GIS 准备 DEM，再到 Blender 手工建模、配色和打光”流程，变成可重复的一键渲染工作流。
 
 项目目前处于早期原型阶段。第一版不会试图替代 GIS 软件，而是准确复现一条已经被大量地形渲染教程验证过的轻量流程：
 
-1. 在 QGIS、ArcGIS 或其他 GIS 软件中准备正方形灰度高度图；
-2. 导出同尺寸、同范围的地形色带图；
-3. DEM Terrain Studio 调用 Blender，自动创建细分平面、施加高程位移、贴图、太阳光、白色承影平面和相机；
-4. 输出带柔和阴影的高质量地形图。
+1. 在 QGIS、ArcGIS 或其他 GIS 软件中裁切好一个省或市的 DEM；
+2. 输入 DEM，并按需指定太阳方位角和高度角；
+3. DEM Terrain Studio 调用 Blender，自动创建细分平面、施加高程位移、生成蓝—绿—黄—灰色带、添加白色承影平面和相机；
+4. 输出带柔和阴影的 PNG 和可编辑的 `.blend` 文件。
 
 ## 目标画面
 
@@ -33,22 +33,24 @@ Blender 已经具备稳定的高度图位移、纹理材质、太阳平行光、
 - 一张灰度高度图；
 - 一张与高度图完全对齐的 RGB/RGBA 色带图。
 
-复制示例配置：
+最简单的用法：
 
 ```powershell
-Copy-Item config.example.json config.json
+py run.py "D:\data\beijing_dem.tif"
 ```
 
-修改 `config.json` 中的图片路径，然后运行：
+设置太阳方位角和高度角：
 
 ```powershell
-py run.py --config config.json
+py run.py "D:\data\beijing_dem.tif" --sun-azimuth 315 --sun-elevation 35
 ```
+
+默认输出在 DEM 同目录，文件名为 `<DEM文件名>_render.png`。相机、色带、垂直夸张、网格精度、白色背景和渲染参数均使用内置默认值。
 
 如果 Blender 不在 PATH 中：
 
 ```powershell
-py run.py --config config.json --blender "C:\Program Files\Blender Foundation\Blender 4.5\blender.exe"
+py run.py "D:\data\beijing_dem.tif" --blender "C:\Program Files\Blender Foundation\Blender 4.5\blender.exe"
 ```
 
 也可以先安装为可编辑包：
@@ -58,21 +60,22 @@ py -m pip install -e .
 dem-terrain-studio --config config.json
 ```
 
-## 配置参数
+高级参数仍可通过 `--config config.json` 使用，但不是第一版必需操作。
+
+## 默认参数
 
 | 参数 | 含义 |
 |---|---|
-| `height_map` | 灰度高度图路径 |
-| `color_map` | 与高度图对齐的色带图路径 |
-| `output` | 输出 PNG 路径 |
-| `engine` | `BLENDER_EEVEE_NEXT` 或 `CYCLES` |
-| `subdivisions` | 平面横纵细分数，预览建议 256，成图建议 512–1024 |
-| `terrain_size` | Blender 场景中的平面宽度 |
-| `height_strength` | 高程位移强度 |
-| `sun_azimuth` | 太阳方位角，单位为度 |
-| `sun_elevation` | 太阳高度角，单位为度 |
-| `camera` | `ORTHO` 或 `PERSP` |
-| `samples` | 渲染采样数 |
+| 项目 | 默认值 |
+|---|---|
+| 渲染器 | Eevee |
+| 网格细分 | 256 × 256 |
+| 输出尺寸 | 1600 × 1600 |
+| 相机 | 正交相机 |
+| 色带 | 白 / 蓝 / 绿 / 黄 / 灰 |
+| 太阳方位角 | 315° |
+| 太阳高度角 | 35° |
+| 输出 | PNG + BLEND |
 
 ## 项目结构
 

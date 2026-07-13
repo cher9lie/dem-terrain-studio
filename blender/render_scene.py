@@ -24,6 +24,8 @@ def load_config(path: Path) -> dict:
         config = json.load(handle)
     base = path.parent.resolve()
     for key in ("height_map", "color_map", "output"):
+        if not config.get(key):
+            continue
         value = Path(config[key]).expanduser()
         config[key] = str((base / value).resolve() if not value.is_absolute() else value.resolve())
     return config
@@ -76,10 +78,34 @@ def create_terrain(config: dict) -> bpy.types.Object:
     output = nodes.new("ShaderNodeOutputMaterial")
     shader = nodes.new("ShaderNodeBsdfPrincipled")
     color = nodes.new("ShaderNodeTexImage")
-    color.image = bpy.data.images.load(config["color_map"], check_existing=True)
     color.interpolation = "Linear"
-    links.new(color.outputs["Color"], shader.inputs["Base Color"])
-    links.new(color.outputs["Alpha"], shader.inputs["Alpha"])
+    texture_coordinate = nodes.new("ShaderNodeTexCoord")
+    links.new(texture_coordinate.outputs["UV"], color.inputs["Vector"])
+    if config.get("color_map"):
+        color.image = bpy.data.images.load(config["color_map"], check_existing=True)
+        links.new(color.outputs["Color"], shader.inputs["Base Color"])
+        links.new(color.outputs["Alpha"], shader.inputs["Alpha"])
+    else:
+        color.image = height_image
+        ramp = nodes.new("ShaderNodeValToRGB")
+        ramp.color_ramp.interpolation = "B_SPLINE"
+        elements = ramp.color_ramp.elements
+        elements.remove(elements[1])
+        elements[0].position = 0.0
+        elements[0].color = (0.96, 0.96, 0.96, 1.0)
+        stops = [
+            (0.015, (0.08, 0.27, 0.45, 1.0)),
+            (0.18, (0.12, 0.43, 0.45, 1.0)),
+            (0.38, (0.35, 0.55, 0.30, 1.0)),
+            (0.58, (0.72, 0.66, 0.30, 1.0)),
+            (0.78, (0.57, 0.52, 0.45, 1.0)),
+            (1.0, (0.82, 0.82, 0.80, 1.0)),
+        ]
+        for position, rgba in stops:
+            element = elements.new(position)
+            element.color = rgba
+        links.new(color.outputs["Color"], ramp.inputs["Fac"])
+        links.new(ramp.outputs["Color"], shader.inputs["Base Color"])
     shader.inputs["Roughness"].default_value = 0.82
     links.new(shader.outputs["BSDF"], output.inputs["Surface"])
     terrain.data.materials.append(material)
@@ -140,7 +166,9 @@ def create_camera(config: dict) -> None:
 
 def configure_render(config: dict) -> None:
     scene = bpy.context.scene
-    engine = str(config.get("engine", "BLENDER_EEVEE_NEXT"))
+    engine = str(config.get("engine", "BLENDER_EEVEE"))
+    if engine == "BLENDER_EEVEE_NEXT" and bpy.app.version >= (5, 0, 0):
+        engine = "BLENDER_EEVEE"
     scene.render.engine = engine
     width, height = config.get("resolution", [1600, 1600])
     scene.render.resolution_x = int(width)
@@ -156,8 +184,13 @@ def configure_render(config: dict) -> None:
     else:
         scene.render.image_settings.color_mode = "RGBA"
 
+    scene.world.use_nodes = True
+    background = scene.world.node_tree.nodes.get("Background")
+    background.inputs["Color"].default_value = (0.96, 0.96, 0.96, 1.0)
+    background.inputs["Strength"].default_value = 0.8
     scene.world.color = (0.96, 0.96, 0.96)
     scene.view_settings.look = "AgX - Medium High Contrast"
+    scene.view_settings.exposure = 0.8
 
 
 def main() -> None:
@@ -177,4 +210,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
