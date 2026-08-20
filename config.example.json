@@ -1,9 +1,10 @@
 {
-  "height_map": "samples/height.png",
-  "color_map": "samples/color.png",
+  "height_map": "C:/path/to/province_dem.tif",
+  "color_map": null,
   "output": "outputs/terrain.png",
   "engine": "BLENDER_EEVEE",
   "subdivisions": 256,
+  "max_texture_size": 2048,
   "terrain_size": 10.0,
   "height_strength": 1.8,
   "sun_azimuth": 315.0,
@@ -15,5 +16,6 @@
   "resolution": [1600, 1600],
   "samples": 64,
   "transparent_background": false,
-  "save_blend": true
+  "save_blend": true,
+  "detect_background": true
 }

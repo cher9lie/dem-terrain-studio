@@ -1,5 +1,6 @@
 __pycache__/
 *.py[cod]
+*.egg-info/
 .venv/
 dist/
 build/
@@ -7,6 +8,6 @@ outputs/
 cache/
 *.blend1
 *.log
+.integration/
 .idea/
 .vscode/
-

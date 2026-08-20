@@ -1,75 +1,72 @@
 # DEM Terrain Studio
 
-把传统的“GIS 准备 DEM，再到 Blender 手工建模、配色和打光”流程，变成可重复的一键渲染工作流。
+将裁切好的省、市 DEM 自动转换为带自然分层色、太阳光和阴影的 Blender 地形渲染图。
 
-项目目前处于早期原型阶段。第一版不会试图替代 GIS 软件，而是准确复现一条已经被大量地形渲染教程验证过的轻量流程：
+第一版刻意保持简单：用户只提供 DEM 和太阳角度；色带、相机、垂直夸张、白色承影平面、网格精度和渲染参数均有默认值。
 
-1. 在 QGIS、ArcGIS 或其他 GIS 软件中裁切好一个省或市的 DEM；
-2. 输入 DEM，并按需指定太阳方位角和高度角；
-3. DEM Terrain Studio 调用 Blender，自动创建细分平面、施加高程位移、生成蓝—绿—黄—灰色带、添加白色承影平面和相机；
-4. 输出带柔和阴影的 PNG 和可编辑的 `.blend` 文件。
+## 当前能力
 
-## 目标画面
+- 输入 TIFF、PNG、JPEG 或 EXR 高程图；
+- 自动把整数、16 位或浮点像素归一化到统一高度范围；
+- 自动识别透明背景或四周近乎一致的白色/黑色 NoData 背景；
+- 保留非正方形 DEM 的宽高比；
+- 自动生成白—蓝—绿—黄—灰自然色带；
+- 根据方位角和高度角设置 Blender Sun；
+- 自动创建白色承影平面和正交相机；
+- 使用 Eevee 输出 PNG，并保存可编辑的 `.blend` 文件；
+- 可选透明背景；透明模式会隐藏 NoData 区并移除白色承影平面，因此不会保留地面投影；
+- 兼容 Blender 4.3+ 与 Blender 5.x；
+- 对路径、配置范围、输出覆盖和 Blender 脚本失败做明确检查。
 
-- 白色正方形地图或独立地形模型；
-- 蓝—绿—黄—灰等自然高程分层色带；
-- 可调地形起伏、太阳方位和太阳高度；
-- 正交沙盘视角或透视视角；
-- Eevee 快速预览，Cycles 高质量渲染；
-- 白色背景、接触阴影和透明 PNG 输出选项。
+## 要求
 
-## 为什么选择 Blender
-
-Blender 已经具备稳定的高度图位移、纹理材质、太阳平行光、阴影、相机和离线渲染能力。项目只负责把这些步骤组织起来，不重新实现一套渲染器。这样能保留传统工作流的视觉效果，也便于用户继续在 `.blend` 文件中手工微调。
-
-轻量实时渲染库仍可能用于后续预览，但不会在第一版同时维护两套场景逻辑。
-
-## 当前原型用法
-
-要求：
-
+- Windows；
 - Python 3.10 或更高版本；
-- Blender 4.x；
-- 一张灰度高度图；
-- 一张与高度图完全对齐的 RGB/RGBA 色带图。
+- Blender 4.3 或更高版本。
 
-最简单的用法：
+程序会依次寻找：
 
-```powershell
-py run.py "D:\data\beijing_dem.tif"
-```
+1. `--blender` 指定的路径；
+2. `BLENDER_PATH` 环境变量；
+3. PATH 中的 Blender；
+4. `C:\Program Files\Blender Foundation`；
+5. `D:\Blender Foundation`。
 
-设置太阳方位角和高度角：
-
-```powershell
-py run.py "D:\data\beijing_dem.tif" --sun-azimuth 315 --sun-elevation 35
-```
-
-默认输出在 DEM 同目录，文件名为 `<DEM文件名>_render.png`。相机、色带、垂直夸张、网格精度、白色背景和渲染参数均使用内置默认值。
-
-如果 Blender 不在 PATH 中：
+## 最简单的用法
 
 ```powershell
-py run.py "D:\data\beijing_dem.tif" --blender "C:\Program Files\Blender Foundation\Blender 4.5\blender.exe"
+Set-Location D:\DEM-Terrain-Studio
+.\run.cmd "D:\data\beijing_dem.tif"
 ```
 
-也可以先安装为可编辑包：
+指定太阳角度：
 
 ```powershell
-py -m pip install -e .
-dem-terrain-studio --config config.json
+.\run.cmd "D:\data\beijing_dem.tif" --sun-azimuth 315 --sun-elevation 35
 ```
 
-高级参数仍可通过 `--config config.json` 使用，但不是第一版必需操作。
+指定输出位置：
+
+```powershell
+.\run.cmd "D:\data\beijing_dem.tif" --output "D:\renders\beijing.png"
+```
+
+默认输出为 DEM 同目录下的 `<DEM文件名>_render.png`，并生成同名 `.blend`。
+
+如果没有自动找到 Blender：
+
+```powershell
+.\run.cmd "D:\data\beijing_dem.tif" `
+  --blender "D:\Blender Foundation\Blender 5.1\blender.exe"
+```
 
 ## 默认参数
 
-| 参数 | 含义 |
-|---|---|
 | 项目 | 默认值 |
 |---|---|
 | 渲染器 | Eevee |
-| 网格细分 | 256 × 256 |
+| 网格最长边细分 | 256 |
+| 处理纹理最长边 | 2048 像素 |
 | 输出尺寸 | 1600 × 1600 |
 | 相机 | 正交相机 |
 | 色带 | 白 / 蓝 / 绿 / 黄 / 灰 |
@@ -77,35 +74,52 @@ dem-terrain-studio --config config.json
 | 太阳高度角 | 35° |
 | 输出 | PNG + BLEND |
 
+## 高级配置
+
+复制并修改 [`config.example.json`](config.example.json)：
+
+```powershell
+Copy-Item config.example.json config.json
+.\run.cmd --config config.json
+```
+
+使用 `--config` 时，太阳和输出参数应写在 JSON 中，不再同时传位置参数或 `--sun-*`。
+
+`detect_background` 默认为 `true`。它会把透明像素以及占据至少 85% 图像边缘的同一灰度值视为 NoData，并将其保持为白色平面。如果 DEM 的真实区域本来就有完全一致的边缘值，可在配置中将其设为 `false`。
+
+如果单独提供 `color_map`，它必须与原始 DEM 像素尺寸完全一致；否则程序会停止，而不是静默错位。
+
+## 输入说明
+
+程序会对可见像素做最小值—最大值归一化。这样 GIS 导出的 8/16 位灰度图和常见浮点图能够得到一致的相对起伏。现阶段表现的是相对高程，不保留原始海拔单位和绝对比例。
+
+Blender 并不是完整的 GIS 栅格读取器。某些带特殊压缩、多个波段或特殊 NoData 元数据的 GeoTIFF 可能无法直接打开；遇到这种情况，请先在 QGIS/ArcGIS 中导出单波段 TIFF 或 16 位 PNG。
+
 ## 项目结构
 
 ```text
 dem-terrain-studio/
-├── blender/
-│   └── render_scene.py       # Blender 场景生成与渲染
-├── docs/
-│   └── roadmap.md            # 分阶段开发计划
 ├── src/dem_terrain_studio/
-│   ├── __init__.py
-│   └── cli.py                # 参数检查、Blender 探测和任务启动
+│   ├── blender/render_scene.py  # 随 Python 包发布的 Blender 场景脚本
+│   └── cli.py                   # 校验、Blender 探测和任务启动
+├── tests/test_cli.py
 ├── config.example.json
+├── docs/roadmap.md
 ├── pyproject.toml
-├── run.py
-└── README.md
+├── run.cmd                    # Windows 主入口
+├── run.ps1                    # 自动寻找现代 Python
+└── run.py
 ```
 
-## 近期计划
+## 开发检查
 
-- 完成一份真实省级样例的端到端验证；
-- 增加 PySide6 桌面界面；
-- 自动生成蓝—绿—黄—灰色带图；
-- 增加省界 Alpha 掩膜与实体侧壁模式；
-- 增加 Eevee 低分辨率预览；
-- 增加 Blender/GPU 自动检测和清晰的错误提示；
-- 保存 `.blend` 场景，便于二次编辑。
+```powershell
+python -m unittest discover -s tests -v
+python -m compileall -q src run.py
+```
 
-完整计划见 [docs/roadmap.md](docs/roadmap.md)。
+当前机器上的 `py` 可能默认指向 ArcGIS 自带的 Python 2.7，因此 Windows 下优先使用 `run.cmd`。它只启动仓库内的 `run.ps1`，不会修改系统执行策略。如果你已经确认 `python --version` 为 3.10 或更高，也可以运行 `python run.py ...`。
 
 ## 开源许可
 
-本项目使用 GPL-3.0 许可证。Blender 本身也使用 GPL。用户使用本项目生成的图片和模型不因 Blender 或本项目许可证而自动变为 GPL；输入数据和底图仍需遵守各自的数据许可。
+本项目使用 GPL-3.0-only。生成的图片和模型不会仅因使用本项目或 Blender 而自动变为 GPL；输入 DEM、行政边界和底图仍应遵守各自的数据许可。
