@@ -11,6 +11,7 @@ from collections import Counter
 from pathlib import Path
 
 import bpy
+import bmesh
 from mathutils import Vector
 
 
@@ -86,6 +87,13 @@ def _read_grayscale(image: bpy.types.Image) -> tuple[array, array]:
             if channels == 2:
                 alpha[pixel] = raw[offset + 1]
         else:
+            if (channels == 3 or raw[offset + 3] > 0.001) and max(
+                abs(raw[offset] - raw[offset + 1]), abs(raw[offset] - raw[offset + 2])
+            ) > 1e-4:
+                raise ValueError(
+                    "DEM 的 RGB 波段不一致，不能混合为高程。请先用 tools/prepare_geodem.py "
+                    "显式选择高程波段，或导出单波段灰度高程图。"
+                )
             gray[pixel] = (
                 0.2126 * raw[offset]
                 + 0.7152 * raw[offset + 1]
@@ -162,6 +170,7 @@ def normalize_height_image(config: dict) -> tuple[bpy.types.Image, int, int, int
 
     if valid_count == 0:
         raise ValueError("DEM 没有可用像素；请检查透明度、NoData 背景或图像内容。")
+    config["_has_nodata"] = valid_count != width * height
     span = high - low
     if not math.isfinite(span):
         raise ValueError("DEM 包含无法处理的非有限高程值。")
@@ -294,6 +303,37 @@ def create_terrain(config: dict) -> tuple[bpy.types.Object, float, float]:
     shader.inputs["Roughness"].default_value = 0.82
     links.new(shader.outputs["BSDF"], output.inputs["Surface"])
     terrain.data.materials.append(material)
+    # Apply displacement before constructing a flat-bottomed rectangular block.
+    # NoData masks still use the material; arbitrary province outlines need a
+    # separate boundary mesh and are deliberately not claimed here.
+    bpy.context.view_layer.objects.active = terrain
+    bpy.ops.object.modifier_apply(modifier=modifier.name)
+    base_material = bpy.data.materials.new("Terrain Base Material")
+    base_material.use_nodes = True
+    base_shader = base_material.node_tree.nodes.get("Principled BSDF")
+    base_shader.inputs["Base Color"].default_value = (0.34, 0.31, 0.26, 1.0)
+    base_shader.inputs["Roughness"].default_value = 0.9
+    terrain.data.materials.append(base_material)
+    if not config["_has_nodata"]:
+        mesh = bmesh.new()
+        mesh.from_mesh(terrain.data)
+        boundary = [edge for edge in mesh.edges if edge.is_boundary]
+        extruded = bmesh.ops.extrude_edge_only(mesh, edges=boundary)["geom"]
+        for item in extruded:
+            if isinstance(item, bmesh.types.BMVert):
+                item.co.z = -0.02
+            elif isinstance(item, bmesh.types.BMFace):
+                item.material_index = 1
+        lower_edges = [edge for edge in mesh.edges if edge.is_boundary]
+        for face in bmesh.ops.holes_fill(mesh, edges=lower_edges, sides=0)["faces"]:
+            face.material_index = 1
+        bmesh.ops.recalc_face_normals(mesh, faces=list(mesh.faces))
+        mesh.to_mesh(terrain.data)
+        mesh.free()
+    # Pack generated/loaded textures so reopening the saved blend is portable.
+    height_image.pack()
+    if config.get("color_map"):
+        color_image.pack()
     return terrain, terrain_width, terrain_height
 
 

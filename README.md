@@ -10,6 +10,7 @@
 - 自动把整数、16 位或浮点像素归一化到统一高度范围；
 - 自动识别透明背景或四周近乎一致的白色/黑色 NoData 背景；
 - 保留非正方形 DEM 的宽高比；
+- 对没有 NoData 的矩形高程图生成封闭侧壁和平底；含掩膜的省界轮廓暂仍按原有贴图方式显示；
 - 自动生成白—蓝—绿—黄—灰自然色带；
 - 根据方位角和高度角设置 Blender Sun；
 - 自动创建白色承影平面和正交相机；
@@ -94,6 +95,26 @@ Copy-Item config.example.json config.json
 程序会对可见像素做最小值—最大值归一化。这样 GIS 导出的 8/16 位灰度图和常见浮点图能够得到一致的相对起伏。现阶段表现的是相对高程，不保留原始海拔单位和绝对比例。
 
 Blender 并不是完整的 GIS 栅格读取器。某些带特殊压缩、多个波段或特殊 NoData 元数据的 GeoTIFF 可能无法直接打开；遇到这种情况，请先在 QGIS/ArcGIS 中导出单波段 TIFF 或 16 位 PNG。
+
+原始地理 DEM 推荐先使用下面的预处理入口。RGB 三通道不一致的高程输入会被拒绝，避免把 elevation/slope/aspect 等多波段数据混成错误地形。单波段原始 GeoTIFF 直接走轻量入口时，仍不解析其 CRS、NoData 和垂直单位。
+
+## 真实地理 DEM 的准备
+
+安装可选 GIS 依赖后，显式选择高程波段和研究范围。原始文件只读，输出目录必须尚不存在；范围坐标使用输入 CRS，目标 CRS 必须是米制投影，高程单位必须事先确认为米。
+
+```powershell
+python -m pip install ".[geo]"
+python tools/prepare_geodem.py "D:\data\dem.tif" outputs/my-region --bounds 113.03 34.35 113.45 34.65 --target-crs EPSG:32649 --band 1 --elevation-unit metre --source-url "原始数据来源URL" --license "数据许可"
+.\run.cmd --config outputs/my-region/white.json
+.\run.cmd --config outputs/my-region/transparent.json
+.\run.cmd --config outputs/my-region/scale_1x.json
+```
+
+工具输出投影后的单波段 DEM、带有效区 alpha 的浮点高程纹理、元数据及三套配置。默认艺术化夸张为 4 倍，`scale_1x.json` 保持水平与垂直的相对米制比例。两者均平移了海拔基准并增加陈列底座，不表示绝对海拔；太阳方位以投影网格北为 0°。蓝色仅表示色带低值，不代表水体。
+
+预处理限制：仅接受来源范围内的小裁片（最多 1600 万原始像元）；按等距米制像元双线性重采样；为去除重投影矩形边缘的空白会向内收边，并在元数据记录收边量。内部真实缺测不填补。复杂省界、多岛和内部孔洞的封闭实体尚未实现。
+
+真实数据验收与本地复现命令见 [2026-11-07 验收记录](docs/acceptance-20261107.md)，待合并内容见 [合并说明草稿](docs/merge-notes-20261107.md)。预处理及审计工具随源码仓库提供，基础 wheel 保持轻量。
 
 ## 项目结构
 

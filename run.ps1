@@ -5,6 +5,10 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$utf8 = [System.Text.UTF8Encoding]::new($false)
+[Console]::OutputEncoding = $utf8
+$OutputEncoding = $utf8
+$env:PYTHONIOENCODING = 'utf-8'
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $runScript = Join-Path $projectRoot 'run.py'
 

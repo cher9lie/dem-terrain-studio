@@ -255,6 +255,9 @@ def _emit_child_output(data: bytes | None, stream: Any) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     runtime_config: Path | None = None
     success_file: Path | None = None
     try:
