@@ -39,6 +39,8 @@ def main() -> None:
     parser.add_argument("--exaggeration", type=float, default=4)
     parser.add_argument("--source-url", required=True)
     parser.add_argument("--license", required=True)
+    parser.add_argument("--trim-border", action="store_true",
+                        help="Explicitly trim rectangular reprojection borders; omit to preserve irregular masks")
     args = parser.parse_args()
     if not 64 <= args.long_edge <= 2048:
         parser.error("--long-edge must be 64..2048")
@@ -77,7 +79,7 @@ def main() -> None:
         # centred valid rectangle so the rendered slab has no artificial mask.
         # Do not fill actual internal holes: they remain explicitly transparent.
         trim = 0
-        while min(dem.shape) > 64 and not (
+        while args.trim_border and min(dem.shape) > 64 and not (
             np.isfinite(dem[0]).all() and np.isfinite(dem[-1]).all()
             and np.isfinite(dem[:, 0]).all() and np.isfinite(dem[:, -1]).all()
         ):

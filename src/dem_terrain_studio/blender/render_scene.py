@@ -7,13 +7,14 @@ import json
 import math
 import sys
 from array import array
-from collections import Counter
+from collections import Counter, deque
 from pathlib import Path
 
 import bpy
-import bmesh
 from mathutils import Vector
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from terrain_mesh import build_terrain_mesh
 
 for stream in (sys.stdout, sys.stderr):
     if hasattr(stream, "reconfigure"):
@@ -135,7 +136,46 @@ def _background_value(gray: array, alpha: array, width: int, height: int) -> flo
     return float(value)
 
 
-def normalize_height_image(config: dict) -> tuple[bpy.types.Image, int, int, int, int]:
+def _extend_masked_pixels(pixels: array, valid: array, width: int, height: int) -> None:
+    """Extend edge colours only, without changing geometry or its valid mask."""
+    if all(valid):
+        return
+    channels = len(pixels) // (width * height)
+    filled = bytearray(valid)
+    pending = deque()
+    for index, keep in enumerate(valid):
+        if not keep:
+            continue
+        neighbours = []
+        if index % width:
+            neighbours.append(index - 1)
+        if index % width < width - 1:
+            neighbours.append(index + 1)
+        if index >= width:
+            neighbours.append(index - width)
+        if index < width * (height - 1):
+            neighbours.append(index + width)
+        if any(not valid[n] for n in neighbours):
+            pending.append(index)
+    while pending:
+        index = pending.popleft()
+        neighbours = []
+        if index % width:
+            neighbours.append(index - 1)
+        if index % width < width - 1:
+            neighbours.append(index + 1)
+        if index >= width:
+            neighbours.append(index - width)
+        if index < width * (height - 1):
+            neighbours.append(index + width)
+        for neighbour in neighbours:
+            if not filled[neighbour]:
+                filled[neighbour] = 1
+                pixels[neighbour * channels:(neighbour + 1) * channels] = pixels[index * channels:(index + 1) * channels]
+                pending.append(neighbour)
+
+
+def normalize_height_image(config: dict) -> tuple:
     source = bpy.data.images.load(config["height_map"], check_existing=False)
     source.colorspace_settings.name = "Non-Color"
     original_width, original_height = source.size
@@ -176,18 +216,21 @@ def normalize_height_image(config: dict) -> tuple[bpy.types.Image, int, int, int
         raise ValueError("DEM 包含无法处理的非有限高程值。")
 
     pixels = array("f", [0.0]) * (width * height * 4)
+    encoded_heights = array("f", [0.0]) * (width * height)
     for index, value in enumerate(gray):
         if valid[index]:
             normalized = 0.5 if span <= 1e-12 else min(1.0, max(0.0, (value - low) / span))
             encoded = 0.02 + normalized * 0.98
         else:
             encoded = 0.0
+        encoded_heights[index] = encoded
         offset = index * 4
         pixels[offset] = encoded
         pixels[offset + 1] = encoded
         pixels[offset + 2] = encoded
         pixels[offset + 3] = 1.0
 
+    _extend_masked_pixels(pixels, valid, width, height)
     normalized_image = bpy.data.images.new(
         "Normalized DEM",
         width=width,
@@ -202,7 +245,7 @@ def normalize_height_image(config: dict) -> tuple[bpy.types.Image, int, int, int
         f"DEM: {original_width}×{original_height}; 有效范围 {low:.6g}–{high:.6g}; "
         f"背景={'自动识别 ' + str(background) if background is not None else '未识别'}。"
     )
-    return normalized_image, width, height, original_width, original_height
+    return normalized_image, width, height, original_width, original_height, encoded_heights, valid
 
 
 def _terrain_dimensions(config: dict, width: int, height: int) -> tuple[float, float]:
@@ -213,32 +256,26 @@ def _terrain_dimensions(config: dict, width: int, height: int) -> tuple[float, f
 
 
 def create_terrain(config: dict) -> tuple[bpy.types.Object, float, float]:
-    height_image, width, height, original_width, original_height = normalize_height_image(config)
-    longest_subdivisions = int(config["subdivisions"])
-    x_subdivisions = max(2, round(longest_subdivisions * width / max(width, height)))
-    y_subdivisions = max(2, round(longest_subdivisions * height / max(width, height)))
+    height_image, width, height, original_width, original_height, heights, valid = normalize_height_image(config)
     terrain_width, terrain_height = _terrain_dimensions(config, width, height)
-
-    bpy.ops.mesh.primitive_grid_add(
-        x_subdivisions=x_subdivisions,
-        y_subdivisions=y_subdivisions,
-        size=1.0,
-        location=(0.0, 0.0, 0.0),
-    )
-    terrain = bpy.context.object
-    terrain.name = "Terrain"
+    geometry = build_terrain_mesh(heights, valid, width, height,
+                                  int(config["subdivisions"]), float(config["height_strength"]))
+    mesh_data = bpy.data.meshes.new("Terrain Mesh")
+    mesh_data.from_pydata(geometry.vertices, [], geometry.faces)
+    mesh_data.update()
+    uv_layer = mesh_data.uv_layers.new(name="UVMap")
+    for polygon in mesh_data.polygons:
+        polygon.use_smooth = polygon.index < geometry.top_faces
+        polygon.material_index = 0 if polygon.index < geometry.top_faces else 1
+        for loop_index in polygon.loop_indices:
+            uv_layer.data[loop_index].uv = geometry.uv[mesh_data.loops[loop_index].vertex_index]
+    terrain = bpy.data.objects.new("Terrain", mesh_data)
+    bpy.context.collection.objects.link(terrain)
     terrain.scale = (terrain_width, terrain_height, 1.0)
-    for polygon in terrain.data.polygons:
-        polygon.use_smooth = True
-
-    texture = bpy.data.textures.new("HeightMap", type="IMAGE")
-    texture.image = height_image
-    texture.extension = "EXTEND"
-    modifier = terrain.modifiers.new("DEM Displacement", type="DISPLACE")
-    modifier.texture = texture
-    modifier.texture_coords = "UV"
-    modifier.mid_level = 0.0
-    modifier.strength = float(config["height_strength"])
+    terrain["retained_cells"] = geometry.retained_cells
+    terrain["top_faces"] = geometry.top_faces
+    terrain["grid_size"] = list(geometry.grid_size)
+    print(f"封闭地形: 网格 {geometry.grid_size}, 有效单元 {geometry.retained_cells}; 孔洞保留。")
 
     material = bpy.data.materials.new("Terrain Color")
     material.use_nodes = True
@@ -261,6 +298,11 @@ def create_terrain(config: dict) -> tuple[bpy.types.Object, float, float]:
             )
         if tuple(color_image.size) != (width, height):
             color_image.scale(width, height)
+        color_pixels = array("f", [0.0]) * len(color_image.pixels)
+        color_image.pixels.foreach_get(color_pixels)
+        _extend_masked_pixels(color_pixels, valid, width, height)
+        color_image.pixels.foreach_set(color_pixels)
+        color_image.update()
         color.image = color_image
         links.new(color.outputs["Color"], shader.inputs["Base Color"])
     else:
@@ -285,51 +327,15 @@ def create_terrain(config: dict) -> tuple[bpy.types.Object, float, float]:
         links.new(color.outputs["Color"], ramp.inputs["Fac"])
         links.new(ramp.outputs["Color"], shader.inputs["Base Color"])
 
-    if config["transparent_background"]:
-        height_mask = nodes.new("ShaderNodeTexImage")
-        height_mask.image = height_image
-        height_mask.interpolation = "Closest"
-        links.new(coordinates.outputs["UV"], height_mask.inputs["Vector"])
-        visible = nodes.new("ShaderNodeMath")
-        visible.operation = "GREATER_THAN"
-        visible.inputs[1].default_value = 0.01
-        links.new(height_mask.outputs["Color"], visible.inputs[0])
-        links.new(visible.outputs[0], shader.inputs["Alpha"])
-        if hasattr(material, "surface_render_method"):
-            material.surface_render_method = "DITHERED"
-        elif hasattr(material, "blend_method"):
-            material.blend_method = "HASHED"
-
     shader.inputs["Roughness"].default_value = 0.82
     links.new(shader.outputs["BSDF"], output.inputs["Surface"])
     terrain.data.materials.append(material)
-    # Apply displacement before constructing a flat-bottomed rectangular block.
-    # NoData masks still use the material; arbitrary province outlines need a
-    # separate boundary mesh and are deliberately not claimed here.
-    bpy.context.view_layer.objects.active = terrain
-    bpy.ops.object.modifier_apply(modifier=modifier.name)
     base_material = bpy.data.materials.new("Terrain Base Material")
     base_material.use_nodes = True
     base_shader = base_material.node_tree.nodes.get("Principled BSDF")
     base_shader.inputs["Base Color"].default_value = (0.34, 0.31, 0.26, 1.0)
     base_shader.inputs["Roughness"].default_value = 0.9
     terrain.data.materials.append(base_material)
-    if not config["_has_nodata"]:
-        mesh = bmesh.new()
-        mesh.from_mesh(terrain.data)
-        boundary = [edge for edge in mesh.edges if edge.is_boundary]
-        extruded = bmesh.ops.extrude_edge_only(mesh, edges=boundary)["geom"]
-        for item in extruded:
-            if isinstance(item, bmesh.types.BMVert):
-                item.co.z = -0.02
-            elif isinstance(item, bmesh.types.BMFace):
-                item.material_index = 1
-        lower_edges = [edge for edge in mesh.edges if edge.is_boundary]
-        for face in bmesh.ops.holes_fill(mesh, edges=lower_edges, sides=0)["faces"]:
-            face.material_index = 1
-        bmesh.ops.recalc_face_normals(mesh, faces=list(mesh.faces))
-        mesh.to_mesh(terrain.data)
-        mesh.free()
     # Pack generated/loaded textures so reopening the saved blend is portable.
     height_image.pack()
     if config.get("color_map"):
